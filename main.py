@@ -1,60 +1,30 @@
 import time
 from src.track import Track
 from src.car import Car
+from src.simulation import Simulation
 
-def draw_track(track, cars):
-    """
-    Creates a text based visualization of the track
-    Parameters:
-        track (Track): track that is being represented
-        cars ([Car]): list of cars on the track
-    """
-    display_length = min(track.length, 60)
-    line = ["."] * display_length
-
-    for car in cars:
-        pos = min(int(car.position), display_length - 1)
-        line[pos] = str(car.car_id)
-
-    print("".join(line))
-
-def run_simulation():
-    track = Track(length=100)
+def main():
+    track = Track(length=200, num_lanes=3)
 
     cars = [
-        Car(car_id=1, position=0, speed=0, acceleration=1, max_speed=5),
-        Car(car_id=2, position=0, speed=0, acceleration=2, max_speed=4)
+        Car(car_id=1, lane=0, position=0, speed=0, max_speed=6),
+        Car(car_id=2, lane=0, position=6, speed=0, max_speed=3),
+        Car(car_id=3, lane=1, position=2, speed=0, max_speed=4),
+        Car(car_id=4, lane=0, position=0, speed=0, max_speed=5),
+        Car(car_id=5, lane=0, position=6, speed=0, max_speed=2),
+        Car(car_id=6, lane=1, position=2, speed=0, max_speed=4)
     ]
 
-    timestep = 0
-    max_steps = 30
+    sim = Simulation(track, cars, safe_gap=1)
 
-    print("Starting simulation...\n")
-
-    while timestep < max_steps:
-        print(f"Time step {timestep}")
-
-        all_finished = True
-
-        for car in cars:
-            if not track.is_finished(car.position):
-                car.update()
-            
+    for _ in range(50):
+        print(f"\nTime step {sim.time_step}")
+        sim.draw()
+        for car in sim.cars:
             print(car)
-
-            if not track.is_finished(car.position):
-                all_finished = False
         
-        draw_track(track, cars)
-        print("-" * 40)
-
-        if all_finished:
-            print("All cars finished the track.")
-            break
-
-        timestep += 1
+        sim.step()
         time.sleep(0.5)
-        
 
 if __name__ == "__main__":
-    run_simulation()
+    main()
