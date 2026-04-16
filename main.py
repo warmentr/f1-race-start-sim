@@ -3,28 +3,56 @@ from src.track import Track
 from src.car import Car
 from src.simulation import Simulation
 
+def build_track():
+    cells = (
+        [{"type": "straight", "speed_limit": 5, "passing_allowed": True} for _ in range(15)] +
+        [{"type": "turn", "speed_limit": 2, "passing_allowed": False, "inside_lane": 4} for _ in range(6)] +
+        [{"type": "straight", "speed_limit": 5, "passing_allowed": True} for _ in range(12)] +
+        [{"type": "turn", "speed_limit": 1, "passing_allowed": False, "inside_lane": 0} for _ in range(5)] +
+        [{"type": "straight", "speed_limit": 5, "passing_allowed": True} for _ in range(12)]
+    )
+    return Track(cells=cells, num_lanes=5)
+
 def main():
-    track = Track(length=200, num_lanes=3)
+    track = build_track()
+    placement = []
 
     cars = [
-        Car(car_id=1, lane=0, position=0, speed=0, max_speed=6),
-        Car(car_id=2, lane=0, position=6, speed=0, max_speed=3),
-        Car(car_id=3, lane=1, position=2, speed=0, max_speed=4),
-        Car(car_id=4, lane=0, position=0, speed=0, max_speed=5),
-        Car(car_id=5, lane=0, position=6, speed=0, max_speed=2),
-        Car(car_id=6, lane=1, position=2, speed=0, max_speed=4)
+        Car(car_id=1, lane=1, position=6, speed=0, max_speed=5, line_preference=1),
+        Car(car_id=2, lane=3, position=5, speed=0, max_speed=5, line_preference=1),
+        Car(car_id=3, lane=1, position=4, speed=0, max_speed=5, line_preference=1),
+        Car(car_id=4, lane=3, position=3, speed=0, max_speed=5, line_preference=1),
+        Car(car_id=5, lane=1, position=2, speed=0, max_speed=5, line_preference=1),
+        Car(car_id=6, lane=3, position=1, speed=0, max_speed=5, line_preference=1)
     ]
 
     sim = Simulation(track, cars, safe_gap=1)
 
-    for _ in range(50):
+    for _ in range(25):
         print(f"\nTime step {sim.time_step}")
         sim.draw()
         for car in sim.cars:
             print(car)
         
         sim.step()
+        for car in sim.cars:
+            if track.is_finished(car=car) and car.car_id not in placement:
+                placement.append(car.car_id)
+                cars.remove(car)
+        
         time.sleep(0.5)
+    
+    print("\nFinal Placement\n")
+    for place, car_id in enumerate(placement, start=1):
+        suffix = "th"
+        if place == 1:
+            suffix = "st"
+        elif place == 2:
+            suffix = "nd"
+        elif place == 3:
+            suffix = "rd"
+
+        print(f"{place}{suffix}. Car {car_id}")
 
 if __name__ == "__main__":
     main()

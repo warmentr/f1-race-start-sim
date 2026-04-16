@@ -1,10 +1,11 @@
 class Car:
-    def __init__(self, car_id: int, lane: int, position: int = 0, speed: int = 0, max_speed: int = 5):
+    def __init__(self, car_id: int, lane: int, position: int = 0, speed: int = 0, max_speed: int = 5, line_preference: float = 1.0):
         self.car_id = car_id
         self.lane = lane
         self.position = position
         self.speed = speed
         self.max_speed = max_speed
+        self.line_preference = line_preference
     
     def update(self):
         """
