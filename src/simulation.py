@@ -50,19 +50,21 @@ class Simulation:
         - how close it is to the inside lane of the next turn
         """
         gap = self.distance_to_next_car(grid, lane, car.position)
-
         score = gap
 
         turn_pos, inside_lane = self.next_turn_info(car, lookahead=6)
 
         if turn_pos is not None and inside_lane is not None:
             lane_distance = abs(lane - inside_lane)
+            turn_distance = max(1, turn_pos - car.position)
+
+            turn_weight = max(1, 7 - turn_distance)
 
             # reward being close to inside lane
-            score += car.line_preference * max(0, 3 - lane_distance)
+            score += car.line_preference * turn_weight * max(0, 3 - lane_distance)
 
             if lane == inside_lane:
-                score += 2 * car.line_preference
+                score += 2 * car.line_preference * turn_weight
         
         return score
 
@@ -81,7 +83,14 @@ class Simulation:
         if grid[target_lane][pos] is not None:
             return False
         
-        for check_pos in range(max(0, pos - self.safe_gap), min(self.track.length, pos + self.safe_gap + 1)):
+        if not self.track.passing_allowed(car.position):
+            return False
+        
+        gap_buffer = self.safe_gap
+        if car.aggression >= 0.8:
+            gap_buffer = max(1, self.safe_gap - 1)
+        
+        for check_pos in range(max(0, pos - self.safe_gap), min(self.track.length, pos + gap_buffer + 1)):
             if grid[target_lane][check_pos] is not None:
                 return False
             
@@ -92,16 +101,17 @@ class Simulation:
         If blocked, try changing lanes.
         Prefer a lane with more open space ahead.
         """
-        current_gap = self.distance_to_next_car(grid, car.lane, car.position)
 
         best_lane = car.lane
         best_score = self.lane_score(grid, car, car.lane)
+
+        lane_change_threshold = 1.5 - car.aggression
 
         for delta in (-1, 1):
             target_lane = car.lane + delta
             if self.lane_change_possible(grid, car, target_lane):
                 score = self.lane_score(grid, car, target_lane)
-                if score > best_score:
+                if score > best_score + lane_change_threshold:
                     best_score = score
                     best_lane = target_lane
         
@@ -137,9 +147,11 @@ class Simulation:
         Apply CA rules:
         1. accelerate
         2. brake for upcoming turns
-        3. if blocked, try lane change (when passing allowed)
-        4. maintain safe spacing
-        5. move
+        3. react to traffic
+        4. use slipstream when close
+        5. if blocked, try lane change (when passing allowed)
+        6. maintain safe spacing
+        7. move
         """
         grid = self.build_occupancy()
 
@@ -157,32 +169,77 @@ class Simulation:
             current_lane = car.lane
             new_lane = current_lane
 
+            # Personality Derived values
+            
+            # aggression: more willing to accelerate hard / attack
+            accel_bonus = 1 if car.aggression > 0.7 and car.speed < car.max_speed else 0
+
+            # braking_sensitivity: cautious drivers look farther ahead for turns
+            turn_lookahead = max(1, int(round(2 + 4 * car.braking_sensitivity)))
+
+            # reaction distance: how early traffic is treated as a problem
+            traffic_trigger = max(1, int(round(1 + 4 * car.reaction_distance)))
+
+            # following distance preference: cautios + anticipatory drivers leave more room
+            following_buffer = self.safe_gap + int(car.reaction_distance > 0.6)
+
              # Rule 1: accelerate
-            new_speed = min(car.speed + 1, car.max_speed)
+            new_speed = min(car.speed + 1 + accel_bonus, car.max_speed)
 
             # Rule 2: brake for turns when needed
-            track_speed_limit = self.upcoming_speed_limit(car, lookahead=3)
+            track_speed_limit = self.upcoming_speed_limit(car, lookahead=turn_lookahead)
             track_speed_limit = self.effective_turn_speed_limit(car, new_lane, track_speed_limit)
+
+            if car.braking_sensitivity > 0.7:
+                track_speed_limit = max(1, track_speed_limit - 1)
+
             new_speed = min(new_speed, track_speed_limit)
 
             # Rule 3: check traffic ahead
             gap_ahead = self.distance_to_next_car(grid, car.lane, car.position)
 
-            if gap_ahead < new_speed or self.next_turn_info(car, lookahead=6)[0] is not None:
-                if self.track.passing_allowed(current_position):
-                    candidate_lane = self.choose_lane(grid, car)
-                    if candidate_lane != car.lane:
-                        new_lane = candidate_lane
-                        gap_ahead = self.distance_to_next_car(grid, new_lane, car.position)
+            # Rule 4: Slipstream effect
+            slipstream_window = max(1, int(round(1 + 2 * car.reaction_distance)))
+            if 0 < gap_ahead <= slipstream_window:
+                slipstream_bonus = 1
+                if car.aggression > 0.75:
+                    slipstream_bonus += 1
+                new_speed = min(new_speed + slipstream_bonus, car.max_speed)
 
-                        track_speed_limit = self.upcoming_speed_limit(car, lookahead=3)
-                        track_speed_limit = self.effective_turn_speed_limit(car, new_lane, track_speed_limit)
-                        new_speed = min(new_speed, track_speed_limit)
+            # Rule 5: decide whether to change lanes
+            turn_ahead = self.next_turn_info(car, lookahead=6)[0] is not None
+            traffic_close = gap_ahead <= traffic_trigger
+            blocked_for_speed = gap_ahead < new_speed + following_buffer
+
+            if (traffic_close or blocked_for_speed or turn_ahead) and self.track.passing_allowed(current_position):
+                candidate_lane = self.choose_lane(grid, car)
+
+                if candidate_lane != current_lane:
+                    new_lane = candidate_lane
+                    gap_ahead = self.distance_to_next_car(grid, new_lane, current_position)
+
+                    # re-evaluate turn speed after lane change
+                    track_speed_limit = self.upcoming_speed_limit(car, lookahead=turn_lookahead)
+                    track_speed_limit = self.effective_turn_speed_limit(car, new_lane, track_speed_limit)
+
+                    if car.braking_sensitivity > 0.7:
+                        track_speed_limit = max(1, track_speed_limit - 1)
+
+                    new_speed = min(new_speed, track_speed_limit)
             
-            # Rule 4: maintain safe spacing
-            new_speed = min(new_speed, gap_ahead)
+            # Rule 6: maintain safe spacing
+            distance_to_finish = (self.track.length - 1) - current_position
 
-            # Rule 5: move
+            if gap_ahead < distance_to_finish:
+                # annother car is the limiter
+                allowed_gap = max(0, gap_ahead - following_buffer + 1)
+            else:
+                # open track to finish
+                allowed_gap = gap_ahead
+
+            new_speed = min(new_speed, allowed_gap)
+
+            # Rule 7: move
             new_position = car.position + new_speed
             if new_position >= self.track.length:
                 new_position = self.track.length - 1

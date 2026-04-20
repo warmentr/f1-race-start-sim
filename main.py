@@ -11,24 +11,43 @@ def build_track():
         [{"type": "turn", "speed_limit": 1, "passing_allowed": False, "inside_lane": 0} for _ in range(5)] +
         [{"type": "straight", "speed_limit": 5, "passing_allowed": True} for _ in range(12)]
     )
-    return Track(cells=cells, num_lanes=5)
+    return Track(cells=cells, num_lanes=3)
 
 def main():
     track = build_track()
     placement = []
 
+    # cars = [
+    #     Car(car_id=1, lane=1, position=6, speed=0, max_speed=5, line_preference=1),
+    #     Car(car_id=2, lane=3, position=5, speed=0, max_speed=5, line_preference=1),
+    #     Car(car_id=3, lane=1, position=4, speed=0, max_speed=5, line_preference=1),
+    #     Car(car_id=4, lane=3, position=3, speed=0, max_speed=5, line_preference=1),
+    #     Car(car_id=5, lane=1, position=2, speed=0, max_speed=5, line_preference=1),
+    #     Car(car_id=6, lane=3, position=1, speed=0, max_speed=5, line_preference=1)
+    # ]
+
     cars = [
-        Car(car_id=1, lane=1, position=6, speed=0, max_speed=5, line_preference=1),
-        Car(car_id=2, lane=3, position=5, speed=0, max_speed=5, line_preference=1),
-        Car(car_id=3, lane=1, position=4, speed=0, max_speed=5, line_preference=1),
-        Car(car_id=4, lane=3, position=3, speed=0, max_speed=5, line_preference=1),
-        Car(car_id=5, lane=1, position=2, speed=0, max_speed=5, line_preference=1),
-        Car(car_id=6, lane=3, position=1, speed=0, max_speed=5, line_preference=1)
+        Car(1, lane=1, position=0, speed=0, max_speed=5,
+        aggression=0.9, braking_sensitivity=0.2,
+        reaction_distance=0.4, line_preference=0.7),
+
+        Car(2, lane=2, position=0, speed=0, max_speed=5,
+            aggression=0.3, braking_sensitivity=0.8,
+            reaction_distance=0.9, line_preference=0.6),
+
+        Car(3, lane=0, position=0, speed=0, max_speed=5,
+            aggression=0.5, braking_sensitivity=0.5,
+            reaction_distance=0.5, line_preference=1.0)
     ]
 
     sim = Simulation(track, cars, safe_gap=1)
 
-    for _ in range(25):
+    for _ in range(50):
+
+        if not sim.cars:
+            print("\n=== All cars have finished ===\n")
+            break
+
         print(f"\nTime step {sim.time_step}")
         sim.draw()
         for car in sim.cars:

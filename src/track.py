@@ -5,7 +5,7 @@ class Track:
         self.num_lanes = num_lanes
 
     def in_bounds(self, lane: int, position: int) -> bool:
-        return 0 <= self.num_lanes and 0 <= position < self.length
+        return 0 <= lane < self.num_lanes and 0 <= position < self.length
 
     def get_cell(self, position: int) -> dict | None:
         if 0 <= position < self.length:
