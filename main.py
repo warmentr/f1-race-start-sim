@@ -5,11 +5,11 @@ from src.simulation import Simulation
 
 def build_track():
     cells = (
-        [{"type": "straight", "speed_limit": 5, "passing_allowed": True} for _ in range(15)] +
+        [{"type": "straight", "speed_limit": 7, "passing_allowed": True} for _ in range(15)] +
         [{"type": "turn", "speed_limit": 2, "passing_allowed": False, "inside_lane": 4} for _ in range(6)] +
-        [{"type": "straight", "speed_limit": 5, "passing_allowed": True} for _ in range(12)] +
+        [{"type": "straight", "speed_limit": 7, "passing_allowed": True} for _ in range(12)] +
         [{"type": "turn", "speed_limit": 1, "passing_allowed": False, "inside_lane": 0} for _ in range(5)] +
-        [{"type": "straight", "speed_limit": 5, "passing_allowed": True} for _ in range(12)]
+        [{"type": "straight", "speed_limit": 7, "passing_allowed": True} for _ in range(12)]
     )
     return Track(cells=cells, num_lanes=3)
 
@@ -27,25 +27,38 @@ def main():
     # ]
 
     cars = [
-        Car(1, lane=1, position=0, speed=0, max_speed=5,
+        Car(1, lane=0, position=0, speed=0, max_speed=5,
         aggression=0.9, braking_sensitivity=0.2,
         reaction_distance=0.4, line_preference=0.7),
 
-        Car(2, lane=2, position=0, speed=0, max_speed=5,
+        Car(2, lane=1, position=0, speed=0, max_speed=5,
             aggression=0.3, braking_sensitivity=0.8,
             reaction_distance=0.9, line_preference=0.6),
 
-        Car(3, lane=0, position=0, speed=0, max_speed=5,
+        Car(3, lane=2, position=0, speed=0, max_speed=5,
             aggression=0.5, braking_sensitivity=0.5,
-            reaction_distance=0.5, line_preference=1.0)
+            reaction_distance=0.5, line_preference=1.0),
+
+        # Car(4, lane=0, position=0, speed=0, max_speed=5,
+        # aggression=0.9, braking_sensitivity=0.2,
+        # reaction_distance=0.4, line_preference=0.7),
+
+        # Car(5, lane=0, position=1, speed=0, max_speed=5,
+        #     aggression=0.3, braking_sensitivity=0.8,
+        #     reaction_distance=0.9, line_preference=0.6),
+
+        # Car(6, lane=0, position=2, speed=0, max_speed=5,
+        #     aggression=0.5, braking_sensitivity=0.5,
+        #     reaction_distance=0.5, line_preference=1.0)
     ]
 
+    all_cars = cars[:]
     sim = Simulation(track, cars, safe_gap=1)
 
     for _ in range(50):
 
         if not sim.cars:
-            print("\n=== All cars have finished ===\n")
+            print("\n=== All cars have finished ===")
             break
 
         print(f"\nTime step {sim.time_step}")
@@ -61,7 +74,7 @@ def main():
         
         time.sleep(0.5)
     
-    print("\nFinal Placement\n")
+    print("\nFinal Placement")
     for place, car_id in enumerate(placement, start=1):
         suffix = "th"
         if place == 1:
@@ -72,6 +85,10 @@ def main():
             suffix = "rd"
 
         print(f"{place}{suffix}. Car {car_id}")
+    
+    print("\n=== Car Metrics ===")
+    for car in all_cars:
+        car.print_metrics()
 
 if __name__ == "__main__":
     main()

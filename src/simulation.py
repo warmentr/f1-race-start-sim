@@ -152,6 +152,8 @@ class Simulation:
         5. if blocked, try lane change (when passing allowed)
         6. maintain safe spacing
         7. move
+
+        Also updates per-car metrics
         """
         grid = self.build_occupancy()
 
@@ -162,24 +164,33 @@ class Simulation:
 
         for car in ordered_cars:
             if self.track.is_finished(car):
-                planned_updates.append((car, car.lane, car.position, car.speed))
+                planned_updates.append({
+                    "car": car, 
+                    "new_lane": car.lane, 
+                    "new_position": car.position,
+                    "new_speed": car.speed,
+                    "used_slipstream": False,
+                    "changed_lane": False,
+                    "braked": False,
+                })
                 continue
 
             current_position = car.position
             current_lane = car.lane
+            old_speed = car.speed
             new_lane = current_lane
 
+            used_slipstream = False
+            changed_lane = False
+            braked = False
+
             # Personality Derived values
-            
             # aggression: more willing to accelerate hard / attack
             accel_bonus = 1 if car.aggression > 0.7 and car.speed < car.max_speed else 0
-
             # braking_sensitivity: cautious drivers look farther ahead for turns
             turn_lookahead = max(1, int(round(2 + 4 * car.braking_sensitivity)))
-
             # reaction distance: how early traffic is treated as a problem
             traffic_trigger = max(1, int(round(1 + 4 * car.reaction_distance)))
-
             # following distance preference: cautios + anticipatory drivers leave more room
             following_buffer = self.safe_gap + int(car.reaction_distance > 0.6)
 
@@ -193,6 +204,9 @@ class Simulation:
             if car.braking_sensitivity > 0.7:
                 track_speed_limit = max(1, track_speed_limit - 1)
 
+            if new_speed > track_speed_limit:
+                braked = True
+
             new_speed = min(new_speed, track_speed_limit)
 
             # Rule 3: check traffic ahead
@@ -205,6 +219,7 @@ class Simulation:
                 if car.aggression > 0.75:
                     slipstream_bonus += 1
                 new_speed = min(new_speed + slipstream_bonus, car.max_speed)
+                used_slipstream = True
 
             # Rule 5: decide whether to change lanes
             turn_ahead = self.next_turn_info(car, lookahead=6)[0] is not None
@@ -216,6 +231,7 @@ class Simulation:
 
                 if candidate_lane != current_lane:
                     new_lane = candidate_lane
+                    changed_lane = True
                     gap_ahead = self.distance_to_next_car(grid, new_lane, current_position)
 
                     # re-evaluate turn speed after lane change
@@ -224,6 +240,9 @@ class Simulation:
 
                     if car.braking_sensitivity > 0.7:
                         track_speed_limit = max(1, track_speed_limit - 1)
+
+                    if new_speed > track_speed_limit:
+                        braked = True
 
                     new_speed = min(new_speed, track_speed_limit)
             
@@ -237,6 +256,9 @@ class Simulation:
                 # open track to finish
                 allowed_gap = gap_ahead
 
+            if new_speed > track_speed_limit:
+                braked = True
+
             new_speed = min(new_speed, allowed_gap)
 
             # Rule 7: move
@@ -244,20 +266,74 @@ class Simulation:
             if new_position >= self.track.length:
                 new_position = self.track.length - 1
 
-            planned_updates.append((car, new_lane, new_position, new_speed))
+            planned_updates.append({
+                    "car": car, 
+                    "new_lane": new_lane, 
+                    "new_position": new_position,
+                    "new_speed": new_speed,
+                    "used_slipstream": used_slipstream,
+                    "changed_lane": changed_lane,
+                    "braked": braked or (new_speed < old_speed),
+                })
 
         # Resolve updates
         occupied_next = set()
-        for car, new_lane, new_position, new_speed in planned_updates:
-            # prevent two cars in the same cell
-            while (new_lane, new_position) in occupied_next and new_position > car.position:
+        for update in planned_updates:
+            car = update["car"]
+            new_lane = update["new_lane"]
+            new_position = update["new_position"]
+            new_speed = update["new_speed"]
+
+            original_lane = car.lane
+            original_position = car.position
+            original_speed = car.speed
+
+            # if target is occupied, try backing up within the chosen lane
+            while (new_lane, new_position) in occupied_next and new_position > original_position:
                 new_position -= 1
-                new_speed = max(0, new_position - car.position)
+                new_speed = max(0, new_position - original_position)
+
+            # if still occupied, cancel the move entirely
+            if (new_lane, new_position) in occupied_next:
+                new_lane = original_lane
+                new_position = original_position
+                new_speed = 0
+
+                # if the original cell is somehow occupied in next state planning back up when possible
+                while (new_lane, new_position) in occupied_next and new_position > 0:
+                    new_position -= 1
 
             occupied_next.add((new_lane, new_position))
+
+            # --- metric updates ---
+            car.steps_taken += 1
+            car.total_speed += new_speed
+            car.max_reached_speed = max(car.max_reached_speed, new_speed)
+            car.distance_traveled += (new_position - original_position)
+
+            if update["used_slipstream"]:
+                car.slipstream_steps += 1
+
+            if self.track.is_turn(new_position):
+                car.turn_steps += 1
+            
+            if new_speed == 0:
+                car.stopped_steps += 1
+            
+            if update["changed_lane"] and new_lane != original_lane:
+                car.lane_changes += 1
+            
+            if update["braked"] and new_speed < original_speed:
+                car.times_braked += 1
+
+            # commit state
             car.lane = new_lane
             car.position = new_position
             car.speed = new_speed
+
+            if self.track.is_finished(car) and not car.finished:
+                car.finished = True
+                car.finish_time = self.time_step + 1
 
         self.time_step += 1
 
